@@ -1,0 +1,128 @@
+name: Auto Update OpenSteamTool DLLs
+
+on:
+  schedule:
+    # 每天 UTC 时间 00:00 (北京时间 08:00) 检查更新
+    - cron: '0 0 * * *'
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  check-and-update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get latest OpenSteamTool release
+        id: upstream
+        run: |
+          LATEST_TAG=$(curl -s https://api.github.com/repos/OpenSteam001/OpenSteamTool/releases/latest | jq -r '.tag_name')
+          DOWNLOAD_URL=$(curl -s https://api.github.com/repos/OpenSteam001/OpenSteamTool/releases/latest | jq -r '.assets[] | select(.name | endswith(".zip")) | .browser_download_url' | head -1)
+          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "url=$DOWNLOAD_URL" >> $GITHUB_OUTPUT
+          echo "OpenSteamTool latest version: $LATEST_TAG"
+
+      - name: Check if update needed
+        id: check
+        run: |
+          CURRENT_VERSION=$(cat OpenSteamKitten/Resources/dlls/VERSION.txt 2>/dev/null || echo "none")
+          UPSTREAM_VERSION="${{ steps.upstream.outputs.tag }}"
+          echo "Current: $CURRENT_VERSION"
+          echo "Upstream: $UPSTREAM_VERSION"
+          if [ "$CURRENT_VERSION" != "$UPSTREAM_VERSION" ]; then
+            echo "need_update=true" >> $GITHUB_OUTPUT
+            echo "Update needed!"
+          else
+            echo "need_update=false" >> $GITHUB_OUTPUT
+            echo "Already up to date"
+          fi
+
+      - name: Download and extract DLLs
+        if: steps.check.outputs.need_update == 'true'
+        run: |
+          # Download latest release
+          wget -q "${{ steps.upstream.outputs.url }}" -O opensteamtool.zip
+
+          # Extract and find DLLs
+          unzip -q opensteamtool.zip -d extracted
+
+          # Find the DLLs (they might be in subdirectories)
+          find extracted -name "OpenSteamTool.dll" -exec cp {} OpenSteamKitten/Resources/dlls/ \;
+          find extracted -name "dwmapi.dll" -exec cp {} OpenSteamKitten/Resources/dlls/ \;
+          find extracted -name "xinput1_4.dll" -exec cp {} OpenSteamKitten/Resources/dlls/ \;
+
+          # Save version info
+          echo "${{ steps.upstream.outputs.tag }}" > OpenSteamKitten/Resources/dlls/VERSION.txt
+
+          # Verify files exist
+          ls -lh OpenSteamKitten/Resources/dlls/
+
+      - name: Setup .NET
+        if: steps.check.outputs.need_update == 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: Build Release
+        if: steps.check.outputs.need_update == 'true'
+        run: |
+          dotnet publish OpenSteamKitten/OpenSteamKitten.csproj \
+            -c Release \
+            -r win-x64 \
+            --self-contained false \
+            /p:PublishSingleFile=true \
+            -o publish
+
+      - name: Create ZIP package
+        if: steps.check.outputs.need_update == 'true'
+        run: |
+          cd publish
+          zip -r ../OpenSteamKitten-${{ steps.upstream.outputs.tag }}.zip OpenSteamKitten.exe Resources/
+          cd ..
+          ls -lh OpenSteamKitten-${{ steps.upstream.outputs.tag }}.zip
+
+      - name: Commit DLL updates
+        if: steps.check.outputs.need_update == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add OpenSteamKitten/Resources/dlls/
+          git commit -m "Update OpenSteamTool DLLs to ${{ steps.upstream.outputs.tag }}"
+          git push
+
+      - name: Create Release
+        if: steps.check.outputs.need_update == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.upstream.outputs.tag }}
+          name: ${{ steps.upstream.outputs.tag }} - 自动更新
+          body: |
+            ## 🤖 自动更新
+
+            本版本自动同步 OpenSteamTool 的最新 DLL 文件。
+
+            ### 更新内容
+            - 📦 同步 OpenSteamTool [${{ steps.upstream.outputs.tag }}](https://github.com/OpenSteam001/OpenSteamTool/releases/tag/${{ steps.upstream.outputs.tag }})
+            - 🔄 更新 `OpenSteamTool.dll`、`dwmapi.dll`、`xinput1_4.dll`
+
+            ### 📥 下载
+            下载 `OpenSteamKitten-${{ steps.upstream.outputs.tag }}.zip` 并解压到任意位置，运行 `OpenSteamKitten.exe` 即可。
+
+            ⚠️ **重要**：必须保持 `OpenSteamKitten.exe` 和 `Resources` 文件夹在同一目录下。
+
+            首次运行如提示需要 .NET 6 Desktop Runtime，Windows 会自动引导安装。
+
+            ### 系统要求
+            - Windows 10/11
+            - .NET 6 Desktop Runtime（首次运行会自动提示安装）
+            - 已安装 Steam
+          files: OpenSteamKitten-${{ steps.upstream.outputs.tag }}.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

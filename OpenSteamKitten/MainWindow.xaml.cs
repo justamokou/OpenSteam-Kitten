@@ -239,16 +239,18 @@ namespace OpenSteamKitten
             string installStatus = _installService.GetInstallStatus();
 
             MessageBox.Show(
-                $"OpenSteam Kitten v1.0\n\n" +
+                $"OpenSteam Kitten v1.1.0\n\n" +
                 $"一个轻量级 GUI 壳程序，用于简化 OpenSteamTool 的使用。\n\n" +
                 $"Steam 路径: {steamPath}\n" +
                 $"安装状态: {installStatus}\n\n" +
                 $"使用说明:\n" +
                 $"• 双击悬浮窗：启动 Steam\n" +
-                $"• 拖入 .lua 文件：添加到配置目录\n" +
+                $"• 拖入 .lua / .manifest 文件：添加到配置目录\n" +
                 $"• Ctrl + 拖入：删除对应文件\n" +
                 $"• 右键菜单：更多功能\n\n" +
-                $"项目地址: https://github.com/OpenSteam001/OpenSteamTool",
+                $"项目地址:\n" +
+                $"OpenSteam Kitten: https://github.com/justamokou/OpenSteam-Kitten\n" +
+                $"OpenSteamTool: https://github.com/OpenSteam001/OpenSteamTool",
                 "关于 OpenSteam Kitten",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
