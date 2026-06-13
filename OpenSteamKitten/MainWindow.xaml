@@ -1,0 +1,43 @@
+<Window x:Class="OpenSteamKitten.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="OpenSteam Kitten"
+        Width="80" Height="80"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        AllowDrop="True"
+        MouseDown="Window_MouseDown"
+        MouseDoubleClick="Window_MouseDoubleClick"
+        Drop="Window_Drop"
+        DragEnter="Window_DragEnter"
+        DragOver="Window_DragOver"
+        Loaded="Window_Loaded"
+        Closing="Window_Closing">
+
+    <Grid>
+        <!-- 圆形悬浮窗背景 -->
+        <Ellipse x:Name="BackgroundEllipse" Fill="#FF1A1A1A" Stroke="#FF404040" StrokeThickness="2"/>
+
+        <!-- 文字图标 -->
+        <Viewbox Width="50" Height="50">
+            <TextBlock Text="🐱" FontSize="40" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </Viewbox>
+
+        <!-- 右键菜单 -->
+        <Grid.ContextMenu>
+            <ContextMenu>
+                <MenuItem Header="一键安装 DLL 📦" Click="InstallDlls_Click" FontWeight="Bold"/>
+                <MenuItem Header="打开 Lua 目录 📁" Click="OpenLuaFolder_Click"/>
+                <Separator/>
+                <MenuItem Header="打开 Steam 🎮" Click="OpenSteam_Click"/>
+                <Separator/>
+                <MenuItem Header="关于" Click="About_Click"/>
+                <MenuItem Header="退出 ❌" Click="Exit_Click"/>
+            </ContextMenu>
+        </Grid.ContextMenu>
+    </Grid>
+</Window>
