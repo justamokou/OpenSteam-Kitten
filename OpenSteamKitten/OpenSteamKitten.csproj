@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <None Include="Resources\dlls\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\VERSION" CopyToOutputDirectory="PreserveNewest" Link="VERSION" />
   </ItemGroup>
 
 </Project>

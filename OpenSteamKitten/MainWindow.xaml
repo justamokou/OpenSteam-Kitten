@@ -35,6 +35,7 @@
                 <Separator/>
                 <MenuItem Header="打开 Steam 🎮" Click="OpenSteam_Click"/>
                 <Separator/>
+                <MenuItem Header="检查更新 🔄" Click="CheckUpdate_Click"/>
                 <MenuItem Header="关于" Click="About_Click"/>
                 <MenuItem Header="退出 ❌" Click="Exit_Click"/>
             </ContextMenu>

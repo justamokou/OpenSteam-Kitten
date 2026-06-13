@@ -30,13 +30,30 @@ jobs:
       - name: Check if update needed
         id: check
         run: |
-          CURRENT_VERSION=$(cat OpenSteamKitten/Resources/dlls/VERSION.txt 2>/dev/null || echo "none")
+          CURRENT_CORE_VERSION=$(cat OpenSteamKitten/Resources/dlls/VERSION.txt 2>/dev/null || echo "none")
           UPSTREAM_VERSION="${{ steps.upstream.outputs.tag }}"
-          echo "Current: $CURRENT_VERSION"
-          echo "Upstream: $UPSTREAM_VERSION"
-          if [ "$CURRENT_VERSION" != "$UPSTREAM_VERSION" ]; then
+          echo "Current core: $CURRENT_CORE_VERSION"
+          echo "Upstream core: $UPSTREAM_VERSION"
+          if [ "$CURRENT_CORE_VERSION" != "$UPSTREAM_VERSION" ]; then
             echo "need_update=true" >> $GITHUB_OUTPUT
-            echo "Update needed!"
+            echo "Core update needed!"
+
+            # 计算新的小猫版本号（当前版本的修订号 +1）
+            CURRENT_KITTEN_VERSION=$(cat VERSION 2>/dev/null || echo "1.1.0")
+            echo "Current kitten version: $CURRENT_KITTEN_VERSION"
+
+            # 分割版本号
+            IFS='.' read -ra PARTS <<< "$CURRENT_KITTEN_VERSION"
+            MAJOR="${PARTS[0]}"
+            MINOR="${PARTS[1]}"
+            PATCH="${PARTS[2]}"
+
+            # 修订号 +1
+            NEW_PATCH=$((PATCH + 1))
+            NEW_KITTEN_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+
+            echo "new_version=$NEW_KITTEN_VERSION" >> $GITHUB_OUTPUT
+            echo "New kitten version: $NEW_KITTEN_VERSION"
           else
             echo "need_update=false" >> $GITHUB_OUTPUT
             echo "Already up to date"
@@ -56,11 +73,16 @@ jobs:
           find extracted -name "dwmapi.dll" -exec cp {} OpenSteamKitten/Resources/dlls/ \;
           find extracted -name "xinput1_4.dll" -exec cp {} OpenSteamKitten/Resources/dlls/ \;
 
-          # Save version info
+          # Save core version info
           echo "${{ steps.upstream.outputs.tag }}" > OpenSteamKitten/Resources/dlls/VERSION.txt
+
+          # Update kitten version
+          echo "${{ steps.check.outputs.new_version }}" > VERSION
 
           # Verify files exist
           ls -lh OpenSteamKitten/Resources/dlls/
+          echo "Kitten version updated to: ${{ steps.check.outputs.new_version }}"
+          echo "Core version updated to: ${{ steps.upstream.outputs.tag }}"
 
       - name: Setup .NET
         if: steps.check.outputs.need_update == 'true'
@@ -82,46 +104,60 @@ jobs:
         if: steps.check.outputs.need_update == 'true'
         run: |
           cd publish
-          zip -r ../OpenSteamKitten-${{ steps.upstream.outputs.tag }}.zip OpenSteamKitten.exe Resources/
+          zip -r ../OpenSteamKitten-${{ steps.check.outputs.new_version }}.zip OpenSteamKitten.exe Resources/
           cd ..
-          ls -lh OpenSteamKitten-${{ steps.upstream.outputs.tag }}.zip
+          ls -lh OpenSteamKitten-${{ steps.check.outputs.new_version }}.zip
 
       - name: Commit DLL updates
         if: steps.check.outputs.need_update == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add OpenSteamKitten/Resources/dlls/
-          git commit -m "Update OpenSteamTool DLLs to ${{ steps.upstream.outputs.tag }}"
+          git add OpenSteamKitten/Resources/dlls/ VERSION
+          git commit -m "Auto-update: OpenSteamTool ${{ steps.upstream.outputs.tag }} → Kitten v${{ steps.check.outputs.new_version }}"
           git push
 
       - name: Create Release
         if: steps.check.outputs.need_update == 'true'
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ steps.upstream.outputs.tag }}
-          name: ${{ steps.upstream.outputs.tag }} - 自动更新
+          tag_name: v${{ steps.check.outputs.new_version }}
+          name: v${{ steps.check.outputs.new_version }} - 内核更新 (OpenSteamTool ${{ steps.upstream.outputs.tag }})
           body: |
-            ## 🤖 自动更新
-
-            本版本自动同步 OpenSteamTool 的最新 DLL 文件。
+            ## 🔄 v${{ steps.check.outputs.new_version }} - 内核自动更新
 
             ### 更新内容
-            - 📦 同步 OpenSteamTool [${{ steps.upstream.outputs.tag }}](https://github.com/OpenSteam001/OpenSteamTool/releases/tag/${{ steps.upstream.outputs.tag }})
-            - 🔄 更新 `OpenSteamTool.dll`、`dwmapi.dll`、`xinput1_4.dll`
+            - 📦 同步 OpenSteamTool ${{ steps.upstream.outputs.tag }} 核心文件
+            - 🔧 更新 `OpenSteamTool.dll`、`dwmapi.dll`、`xinput1_4.dll`
+
+            ### 版本信息
+            - **OpenSteam Kitten**: v${{ steps.check.outputs.new_version }}
+            - **OpenSteamTool 内核**: ${{ steps.upstream.outputs.tag }}
 
             ### 📥 下载
-            下载 `OpenSteamKitten-${{ steps.upstream.outputs.tag }}.zip` 并解压到任意位置，运行 `OpenSteamKitten.exe` 即可。
+            下载 `OpenSteamKitten-${{ steps.check.outputs.new_version }}.zip` 并解压到任意位置，运行 `OpenSteamKitten.exe` 即可。
 
             ⚠️ **重要**：必须保持 `OpenSteamKitten.exe` 和 `Resources` 文件夹在同一目录下。
 
             首次运行如提示需要 .NET 6 Desktop Runtime，Windows 会自动引导安装。
 
+            ### 💡 使用说明
+            **拖拽文件到悬浮窗：**
+            - `.lua` 文件 → 自动放到 `Steam\config\lua\`
+            - `.manifest` 文件 → 自动放到 `Steam\config\depotcache\`
+            - 按住 `Ctrl` 拖拽 → 删除对应文件
+
             ### 系统要求
             - Windows 10/11
             - .NET 6 Desktop Runtime（首次运行会自动提示安装）
             - 已安装 Steam
-          files: OpenSteamKitten-${{ steps.upstream.outputs.tag }}.zip
+
+            ---
+
+            > 🤖 本版本由 GitHub Actions 自动构建并发布
+            >
+            > 上游更新日志：https://github.com/OpenSteam001/OpenSteamTool/releases/tag/${{ steps.upstream.outputs.tag }}
+          files: OpenSteamKitten-${{ steps.check.outputs.new_version }}.zip
           draft: false
           prerelease: false
         env:

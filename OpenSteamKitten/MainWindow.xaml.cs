@@ -21,6 +21,7 @@ namespace OpenSteamKitten
         private readonly InstallService _installService;
         private readonly LuaFileService _luaFileService;
         private readonly ProcessService _processService;
+        private readonly UpdateService _updateService;
         private SimpleTrayIcon? _trayIcon;
 
         public MainWindow()
@@ -32,6 +33,7 @@ namespace OpenSteamKitten
             _installService = new InstallService(_steamPathService);
             _luaFileService = new LuaFileService(_steamPathService);
             _processService = new ProcessService(_steamPathService);
+            _updateService = new UpdateService();
 
             // 初始化托盘图标
             _trayIcon = new SimpleTrayIcon(
@@ -232,15 +234,26 @@ namespace OpenSteamKitten
             _processService.StartSteam();
         }
 
+        // 右键菜单：检查更新
+        private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            await _updateService.CheckForUpdatesAsync(showNoUpdateMessage: true);
+        }
+
         // 右键菜单：关于
         private void About_Click(object sender, RoutedEventArgs e)
         {
             string steamPath = _steamPathService.GetSteamPath() ?? "未检测到";
             string installStatus = _installService.GetInstallStatus();
+            string kittenVersion = _updateService.GetCurrentVersion();
+            string coreVersion = _updateService.GetCoreVersion();
 
             MessageBox.Show(
-                $"OpenSteam Kitten v1.1.0\n\n" +
+                $"OpenSteam Kitten v{kittenVersion}\n\n" +
                 $"一个轻量级 GUI 壳程序，用于简化 OpenSteamTool 的使用。\n\n" +
+                $"版本信息:\n" +
+                $"• 小猫版本: v{kittenVersion}\n" +
+                $"• 内核版本: {coreVersion}\n\n" +
                 $"Steam 路径: {steamPath}\n" +
                 $"安装状态: {installStatus}\n\n" +
                 $"使用说明:\n" +
