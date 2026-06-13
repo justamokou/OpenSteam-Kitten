@@ -8,7 +8,7 @@
 
 **📥 下载**：
 
-从 [Releases](https://github.com/justamokou/OpenSteam-Kitten/releases) 下载 `OpenSteamKitten-v1.0.0.zip`（约 **837 KB**），解压到任意位置。
+从 [Releases](https://github.com/justamokou/OpenSteam-Kitten/releases) 下载 `OpenSteamKitten-v1.0.0.zip`（约 **866 KB**），解压到任意位置。
 
 > 💡 **首次运行**：如提示需要 .NET 6 Desktop Runtime，Windows 会自动引导安装（约 55 MB，一次安装永久使用）。
 > 
