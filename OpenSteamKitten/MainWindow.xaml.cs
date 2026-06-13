@@ -146,11 +146,13 @@ namespace OpenSteamKitten
             string[] files = (string[])e.Data.GetData(System.Windows.DataFormats.FileDrop);
             bool isCtrlPressed = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
 
-            var luaFiles = files.Where(f => f.EndsWith(".lua", StringComparison.OrdinalIgnoreCase)).ToArray();
+            var supportedFiles = files.Where(f =>
+                f.EndsWith(".lua", StringComparison.OrdinalIgnoreCase) ||
+                f.EndsWith(".manifest", StringComparison.OrdinalIgnoreCase)).ToArray();
 
-            if (luaFiles.Length == 0)
+            if (supportedFiles.Length == 0)
             {
-                MessageBox.Show("请拖入 .lua 文件！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("请拖入 .lua 或 .manifest 文件！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -158,7 +160,7 @@ namespace OpenSteamKitten
             {
                 // Ctrl + 拖拽 = 删除
                 int removedCount = 0;
-                foreach (string file in luaFiles)
+                foreach (string file in supportedFiles)
                 {
                     string fileName = Path.GetFileName(file);
                     if (_luaFileService.RemoveLuaFile(fileName))
@@ -170,7 +172,7 @@ namespace OpenSteamKitten
                 if (removedCount > 0)
                 {
                     MessageBox.Show(
-                        $"已移除 {removedCount} 个 Lua 文件！",
+                        $"已移除 {removedCount} 个文件！",
                         "删除成功",
                         MessageBoxButton.OK,
                         MessageBoxImage.Information);
@@ -180,18 +182,31 @@ namespace OpenSteamKitten
             {
                 // 普通拖拽 = 添加
                 int addedCount = 0;
-                foreach (string file in luaFiles)
+                int luaCount = 0;
+                int manifestCount = 0;
+
+                foreach (string file in supportedFiles)
                 {
                     if (await _luaFileService.AddLuaFileAsync(file))
                     {
                         addedCount++;
+                        if (file.EndsWith(".lua", StringComparison.OrdinalIgnoreCase))
+                            luaCount++;
+                        else if (file.EndsWith(".manifest", StringComparison.OrdinalIgnoreCase))
+                            manifestCount++;
                     }
                 }
 
                 if (addedCount > 0)
                 {
+                    string message = $"添加成功：\n";
+                    if (luaCount > 0)
+                        message += $"- {luaCount} 个 Lua 文件 → config/lua/\n";
+                    if (manifestCount > 0)
+                        message += $"- {manifestCount} 个 Manifest 文件 → config/depotcache/";
+
                     MessageBox.Show(
-                        $"已添加 {addedCount} 个 Lua 文件到配置目录！",
+                        message,
                         "添加成功",
                         MessageBoxButton.OK,
                         MessageBoxImage.Information);

@@ -56,5 +56,14 @@ namespace OpenSteamKitten.Services
 
             return Path.Combine(steamPath, "config", "lua");
         }
+
+        public string GetDepotCacheDirectory()
+        {
+            var steamPath = GetSteamPath();
+            if (string.IsNullOrEmpty(steamPath))
+                throw new InvalidOperationException("未找到 Steam 安装路径");
+
+            return Path.Combine(steamPath, "config", "depotcache");
+        }
     }
 }
