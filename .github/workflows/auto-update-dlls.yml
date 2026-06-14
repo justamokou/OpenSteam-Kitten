@@ -2,8 +2,8 @@ name: Auto Update OpenSteamTool DLLs
 
 on:
   schedule:
-    # 每天 UTC 时间 00:00 (北京时间 08:00) 检查更新
-    - cron: '0 0 * * *'
+    # 每 2 小时检查一次更新（避开整点，减少 GitHub 负载）
+    - cron: '23 */2 * * *'
   workflow_dispatch: # 允许手动触发
 
 jobs:
