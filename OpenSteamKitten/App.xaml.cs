@@ -2,6 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
+using OpenSteamKitten.Services;
 using Application = System.Windows.Application;
 using MessageBox = System.Windows.MessageBox;
 using MessageBoxButton = System.Windows.MessageBoxButton;
@@ -43,6 +44,40 @@ namespace OpenSteamKitten
 
             // 保持 Mutex 直到应用退出
             GC.KeepAlive(_mutex);
+
+            // 校验上次更新是否成功（壳更新重启后）
+            VerifyPendingUpdate();
+        }
+
+        // 重启后校验 pending marker：成功则静默删除，失败则提示手动下载
+        private void VerifyPendingUpdate()
+        {
+            try
+            {
+                var svc = new UpdateService();
+                var marker = svc.ReadPendingMarker();
+                if (marker == null) return;
+
+                var (targetShell, targetCore) = marker.Value;
+                string currentShell = svc.GetCurrentVersion();
+                string currentCore = svc.GetCoreVersion();
+
+                // 当前版本已达目标 → 成功；否则视为未完成
+                bool shellOk = !svc.IsNewerVersion(currentShell, targetShell);
+                bool coreOk = string.IsNullOrEmpty(targetCore) || !svc.IsNewerVersion(currentCore, targetCore);
+
+                svc.DeletePendingMarker(); // 无论成败都清掉，避免重复提示
+
+                if (!(shellOk && coreOk))
+                {
+                    MessageBox.Show(
+                        "上次更新未完成，可能是替换文件失败。\n\n" +
+                        "请手动前往下载最新版本：\n" +
+                        "https://github.com/justamokou/OpenSteam-Kitten/releases",
+                        "更新未完成", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            catch { }
         }
 
         private void ActivateExistingWindow()

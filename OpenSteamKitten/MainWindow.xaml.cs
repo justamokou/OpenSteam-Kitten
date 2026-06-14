@@ -2,6 +2,7 @@ using OpenSteamKitten.Services;
 using OpenSteamKitten.Utils;
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Windows;
@@ -11,6 +12,7 @@ using Application = System.Windows.Application;
 using MessageBox = System.Windows.MessageBox;
 using MessageBoxButton = System.Windows.MessageBoxButton;
 using MessageBoxImage = System.Windows.MessageBoxImage;
+using MessageBoxResult = System.Windows.MessageBoxResult;
 using Color = System.Windows.Media.Color;
 
 namespace OpenSteamKitten
@@ -22,6 +24,7 @@ namespace OpenSteamKitten
         private readonly LuaFileService _luaFileService;
         private readonly ProcessService _processService;
         private readonly UpdateService _updateService;
+        private readonly CancellationTokenSource _updateCts = new CancellationTokenSource();
         private SimpleTrayIcon? _trayIcon;
 
         public MainWindow()
@@ -45,6 +48,7 @@ namespace OpenSteamKitten
 
         private void Window_Closing(object sender, CancelEventArgs e)
         {
+            _updateCts.Cancel();
             _trayIcon?.Dispose();
         }
 
@@ -52,6 +56,9 @@ namespace OpenSteamKitten
         {
             // 确保窗口在屏幕可见区域内
             EnsureWindowVisible();
+
+            // 启动时静默检查更新（fire-and-forget，永不抛出）
+            _ = SilentUpdateCheckAsync(isManual: false);
         }
 
         private void EnsureWindowVisible()
@@ -237,7 +244,125 @@ namespace OpenSteamKitten
         // 右键菜单：检查更新
         private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
         {
-            await _updateService.CheckForUpdatesAsync(showNoUpdateMessage: true);
+            await SilentUpdateCheckAsync(isManual: true);
+        }
+
+        // 启动静默检查 / 手动检查共用。isManual=true 时每个分支都弹 UI。
+        private async Task SilentUpdateCheckAsync(bool isManual)
+        {
+            UpdateCheckResult info;
+            try
+            {
+                info = await _updateService.CheckForUpdatesAsync();
+            }
+            catch (Exception ex)
+            {
+                if (isManual)
+                    MessageBox.Show($"检查更新时出错：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            // 检查本身失败（网络/解析）：静默路径不打扰
+            if (info.ErrorMessage != null)
+            {
+                if (isManual)
+                    MessageBox.Show($"检查更新失败：{info.ErrorMessage}", "检查更新", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // 已是最新：静默路径不打扰
+            if (!info.AnyUpdateAvailable)
+            {
+                if (isManual)
+                    MessageBox.Show($"已是最新版本 🎉\n\n小猫 v{info.CurrentShell} / 内核 {info.CurrentCore}",
+                        "检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // 有更新：列出壳/内核各自 当前→最新
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("发现可用更新：\n");
+            sb.AppendLine(info.ShellUpdateAvailable
+                ? $"• 小猫：v{info.CurrentShell} → v{info.LatestShell}"
+                : $"• 小猫：v{info.CurrentShell}（已是最新）");
+            sb.AppendLine(info.CoreUpdateAvailable
+                ? $"• 内核：{info.CurrentCore} → {info.LatestCore}"
+                : $"• 内核：{info.CurrentCore}（已是最新）");
+            sb.AppendLine("\n是否立即更新？");
+
+            var choice = MessageBox.Show(sb.ToString(), "发现新版本", MessageBoxButton.YesNo, MessageBoxImage.Information);
+            if (choice != MessageBoxResult.Yes) return;
+
+            try
+            {
+                var apply = await _updateService.ApplyUpdateAsync(info, null, _updateCts.Token);
+                await HandleApplyResultAsync(info, apply);
+            }
+            catch (Exception ex)
+            {
+                // 用户中途退出（取消）时不弹错误框
+                if (isManual && !_updateCts.IsCancellationRequested)
+                    MessageBox.Show($"更新失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // 处理应用更新结果
+        private async Task HandleApplyResultAsync(UpdateCheckResult info, UpdateApplyResult apply)
+        {
+            switch (apply.Outcome)
+            {
+                case UpdateApplyResult.OutcomeKind.SuccessRestartFree:
+                    // 仅内核更新：已原地完成，提示后全自动应用到 Steam
+                    MessageBox.Show($"{apply.Message}", "更新成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                    try { await _installService.InstallDllsAsync(); }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"应用到 Steam 失败：{ex.Message}\n可稍后点击「一键安装 DLL」重试。",
+                            "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                    break;
+
+                case UpdateApplyResult.OutcomeKind.SuccessRestartNeeded:
+                    // 壳有更新：文件已就位。若内核也更新了，先把新 DLL 推到 Steam，再重启替换 exe
+                    if (info.CoreUpdateAvailable)
+                    {
+                        try { await _installService.InstallDllsAsync(); }
+                        catch { /* 推 Steam 失败不阻断重启 */ }
+                    }
+                    _trayIcon?.Dispose();
+                    MessageBox.Show("更新已下载，程序即将重启以完成更新。", "重启更新",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    try
+                    {
+                        var psi = new ProcessStartInfo
+                        {
+                            FileName = apply.Message, // update.bat 路径
+                            WindowStyle = ProcessWindowStyle.Hidden,
+                            CreateNoWindow = true,
+                            UseShellExecute = false,
+                            WorkingDirectory = Path.GetDirectoryName(apply.Message)
+                        };
+                        Process.Start(psi);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"无法启动更新脚本：{ex.Message}\n\n请手动前往下载：\n{info.ReleaseHtmlUrl}",
+                            "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return;
+                    }
+                    Application.Current.Shutdown();
+                    break;
+
+                case UpdateApplyResult.OutcomeKind.FailedNeedsManual:
+                    _updateService.DeletePendingMarker();
+                    // 用户主动取消（退出）时不弹"更新失败"，避免打扰
+                    if (!_updateCts.IsCancellationRequested)
+                    {
+                        MessageBox.Show($"更新失败：{apply.Message}\n\n请手动前往下载：\n{info.ReleaseHtmlUrl}",
+                            "更新失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                    break;
+            }
         }
 
         // 右键菜单：关于
@@ -272,6 +397,7 @@ namespace OpenSteamKitten
         // 右键菜单：退出
         private void Exit_Click(object sender, RoutedEventArgs e)
         {
+            _updateCts.Cancel();
             Application.Current.Shutdown();
         }
     }

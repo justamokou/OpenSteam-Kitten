@@ -14,6 +14,7 @@
   <ItemGroup>
     <None Include="Resources\dlls\**\*" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\VERSION" CopyToOutputDirectory="PreserveNewest" Link="VERSION" />
+    <None Include="version.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
