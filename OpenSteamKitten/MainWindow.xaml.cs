@@ -24,6 +24,7 @@ namespace OpenSteamKitten
         private readonly LuaFileService _luaFileService;
         private readonly ProcessService _processService;
         private readonly UpdateService _updateService;
+        private readonly CleanupService _cleanupService;
         private readonly CancellationTokenSource _updateCts = new CancellationTokenSource();
         private SimpleTrayIcon? _trayIcon;
         private SteamLaunchService? _steamWatch;
@@ -39,6 +40,7 @@ namespace OpenSteamKitten
             _luaFileService = new LuaFileService(_steamPathService);
             _processService = new ProcessService(_steamPathService);
             _updateService = new UpdateService();
+            _cleanupService = new CleanupService(_steamPathService);
 
             // 初始化托盘图标
             _trayIcon = new SimpleTrayIcon(
@@ -176,7 +178,7 @@ namespace OpenSteamKitten
 
             if (supportedFiles.Length == 0)
             {
-                MessageBox.Show("请拖入 .lua 或 .manifest 文件！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(this, "请拖入 .lua 或 .manifest 文件！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -196,6 +198,7 @@ namespace OpenSteamKitten
                 if (removedCount > 0)
                 {
                     MessageBox.Show(
+                        this,
                         $"已移除 {removedCount} 个文件！",
                         "删除成功",
                         MessageBoxButton.OK,
@@ -230,6 +233,7 @@ namespace OpenSteamKitten
                         message += $"- {manifestCount} 个 Manifest 文件 → config/depotcache/";
 
                     MessageBox.Show(
+                        this,
                         message,
                         "添加成功",
                         MessageBoxButton.OK,
@@ -244,6 +248,16 @@ namespace OpenSteamKitten
             await _installService.InstallDllsAsync();
         }
 
+        // 右键菜单：一键清理（三类分别调用，各自走确认流程）
+        private async void CleanDlls_Click(object sender, RoutedEventArgs e)
+            => await _cleanupService.CleanupAsync(CleanupScope.Dll);
+
+        private async void CleanLua_Click(object sender, RoutedEventArgs e)
+            => await _cleanupService.CleanupAsync(CleanupScope.Lua);
+
+        private async void CleanManifests_Click(object sender, RoutedEventArgs e)
+            => await _cleanupService.CleanupAsync(CleanupScope.Manifest);
+
         // 右键菜单：打开 Lua 目录
         private void OpenLuaFolder_Click(object sender, RoutedEventArgs e)
         {
@@ -254,6 +268,15 @@ namespace OpenSteamKitten
         private void OpenSteam_Click(object sender, RoutedEventArgs e)
         {
             _processService.StartSteam();
+        }
+
+        // 右键菜单：重启 Steam（关闭当前 Steam 并重新启动）
+        private async void RestartSteam_Click(object sender, RoutedEventArgs e)
+        {
+            var r = MessageBox.Show(this, "确认重启 Steam？\n这将关闭当前 Steam 并重新启动。",
+                "重启 Steam", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (r != MessageBoxResult.Yes) return;
+            await _processService.RestartSteamAsync();
         }
 
         // 右键菜单：检查更新

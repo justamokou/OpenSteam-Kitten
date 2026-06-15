@@ -31,9 +31,15 @@
         <Grid.ContextMenu>
             <ContextMenu Opened="ContextMenu_Opened">
                 <MenuItem Header="一键安装 DLL 📦" Click="InstallDlls_Click" FontWeight="Bold"/>
+                <MenuItem Header="一键清理 🧹">
+                    <MenuItem Header="清理内核 DLL" Click="CleanDlls_Click"/>
+                    <MenuItem Header="清理 Lua 配置" Click="CleanLua_Click"/>
+                    <MenuItem Header="清理清单文件" Click="CleanManifests_Click"/>
+                </MenuItem>
                 <MenuItem Header="打开 Lua 目录 📁" Click="OpenLuaFolder_Click"/>
                 <Separator/>
                 <MenuItem Header="打开 Steam 🎮" Click="OpenSteam_Click"/>
+                <MenuItem Header="重启 Steam ♻️" Click="RestartSteam_Click"/>
                 <Separator/>
                 <MenuItem x:Name="SteamLaunchMenuItem" Header="随 Steam 启动 🚀" IsCheckable="True" Click="SteamLaunch_Click"/>
                 <MenuItem Header="隐藏悬浮窗 👁" Click="HideFloatingWindow_Click"/>

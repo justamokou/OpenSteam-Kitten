@@ -1,9 +1,9 @@
 using System;
-using System.Diagnostics;
+using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
+using OpenSteamKitten.Utils;
 using MessageBox = System.Windows.MessageBox;
 using MessageBoxButton = System.Windows.MessageBoxButton;
 using MessageBoxImage = System.Windows.MessageBoxImage;
@@ -14,7 +14,6 @@ namespace OpenSteamKitten.Services
     public class InstallService
     {
         private readonly SteamPathService _steamPathService;
-        private static readonly string[] DllNames = { "OpenSteamTool.dll", "dwmapi.dll", "xinput1_4.dll" };
 
         public InstallService(SteamPathService steamPathService)
         {
@@ -34,11 +33,11 @@ namespace OpenSteamKitten.Services
             try
             {
                 // 预先检查所有文件状态
-                var lockedFiles = new System.Collections.Generic.List<string>();
-                var existingFiles = new System.Collections.Generic.List<string>();
-                var missingSourceFiles = new System.Collections.Generic.List<string>();
+                var lockedFiles = new List<string>();
+                var existingFiles = new List<string>();
+                var missingSourceFiles = new List<string>();
 
-                foreach (var dllName in DllNames)
+                foreach (var dllName in OpenSteamToolFiles.KernelDlls)
                 {
                     string source = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "dlls", dllName);
                     string dest = Path.Combine(steamPath, dllName);
@@ -52,7 +51,7 @@ namespace OpenSteamKitten.Services
                     if (File.Exists(dest))
                     {
                         existingFiles.Add(dllName);
-                        if (IsFileLocked(dest))
+                        if (SteamProcessHelper.IsFileLocked(dest))
                         {
                             lockedFiles.Add(dllName);
                         }
@@ -80,7 +79,7 @@ namespace OpenSteamKitten.Services
 
                     if (lockedResult == MessageBoxResult.Yes)
                     {
-                        if (!TerminateSteamProcesses())
+                        if (!SteamProcessHelper.TerminateSteamProcesses())
                         {
                             MessageBox.Show("无法关闭 Steam 进程。\n请手动关闭 Steam 后重试。",
                                 "错误", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -112,10 +111,10 @@ namespace OpenSteamKitten.Services
                 }
 
                 // 执行安装
-                var installedFiles = new System.Collections.Generic.List<string>();
-                var failedFiles = new System.Collections.Generic.List<string>();
+                var installedFiles = new List<string>();
+                var failedFiles = new List<string>();
 
-                foreach (var dllName in DllNames)
+                foreach (var dllName in OpenSteamToolFiles.KernelDlls)
                 {
                     try
                     {
@@ -187,67 +186,6 @@ namespace OpenSteamKitten.Services
             if (IsInstalled())
                 return "已安装";
             return "未安装";
-        }
-
-        private bool IsFileLocked(string filePath)
-        {
-            try
-            {
-                using (FileStream stream = File.Open(filePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
-                {
-                    stream.Close();
-                }
-                return false;
-            }
-            catch (IOException)
-            {
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private bool TerminateSteamProcesses()
-        {
-            try
-            {
-                var steamProcesses = Process.GetProcessesByName("steam");
-                var steamServiceProcesses = Process.GetProcessesByName("steamservice");
-                var steamWebHelperProcesses = Process.GetProcessesByName("steamwebhelper");
-
-                var allProcesses = steamProcesses
-                    .Concat(steamServiceProcesses)
-                    .Concat(steamWebHelperProcesses)
-                    .ToArray();
-
-                if (allProcesses.Length == 0)
-                    return true;
-
-                foreach (var process in allProcesses)
-                {
-                    try
-                    {
-                        process.Kill();
-                        process.WaitForExit(3000);
-                    }
-                    catch
-                    {
-                        // 忽略单个进程终止失败
-                    }
-                    finally
-                    {
-                        process.Dispose();
-                    }
-                }
-
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
         }
     }
 }

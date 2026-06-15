@@ -1,7 +1,9 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
+using OpenSteamKitten.Utils;
 using MessageBox = System.Windows.MessageBox;
 using MessageBoxButton = System.Windows.MessageBoxButton;
 using MessageBoxImage = System.Windows.MessageBoxImage;
@@ -47,6 +49,14 @@ namespace OpenSteamKitten.Services
             {
                 MessageBox.Show($"启动 Steam 失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        /// <summary>重启 Steam：关闭现有 Steam 进程，等待退出后重新启动。</summary>
+        public async Task RestartSteamAsync()
+        {
+            SteamProcessHelper.TerminateSteamProcesses(); // 关闭现有 Steam
+            await Task.Delay(1000);                        // 等进程退出、文件句柄释放
+            StartSteam();                                  // 重新启动
         }
 
         public void OpenLuaDirectory()
