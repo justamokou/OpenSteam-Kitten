@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
@@ -14,6 +15,7 @@ namespace OpenSteamKitten
     {
         private static Mutex? _mutex;
         private const string MutexName = "OpenSteamKitten_SingleInstance";
+        private MainWindow? _mainWindow;
 
         // Windows API 用于激活已存在的窗口
         [DllImport("user32.dll")]
@@ -47,6 +49,26 @@ namespace OpenSteamKitten
 
             // 校验上次更新是否成功（壳更新重启后）
             VerifyPendingUpdate();
+
+            // 手动创建主窗口（App.xaml 已移除 StartupUri，按启动模式决定是否显示）
+            bool steamWatch = e.Args != null &&
+                e.Args.Contains("--steamwatch", StringComparer.OrdinalIgnoreCase);
+
+            _mainWindow = new MainWindow();
+            if (steamWatch)
+            {
+                // 开机自启（--steamwatch）：静默监听，不显示窗口，等 Steam 出现再弹出
+                _mainWindow.StartSteamWatch(silent: true);
+            }
+            else
+            {
+                _mainWindow.Show();
+                // 正常启动：若用户已开启「随 Steam 启动」，也监听（配合隐藏后随 Steam 弹出）
+                if (SteamLaunchService.IsEnabled())
+                {
+                    _mainWindow.StartSteamWatch();
+                }
+            }
         }
 
         // 重启后校验 pending marker：成功则静默删除，失败则提示手动下载
@@ -91,7 +113,7 @@ namespace OpenSteamKitten
             }
             else
             {
-                MessageBox.Show("OpenSteam Kitten 已在运行中！\n请在桌面右下角查找黑色圆形图标。",
+                MessageBox.Show("OpenSteam Kitten 已在后台运行（随 Steam 启动模式）。\n请右键右下角托盘的小猫图标 → 「显示悬浮窗」。",
                     "提示", MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }

@@ -26,6 +26,8 @@ namespace OpenSteamKitten
         private readonly UpdateService _updateService;
         private readonly CancellationTokenSource _updateCts = new CancellationTokenSource();
         private SimpleTrayIcon? _trayIcon;
+        private SteamLaunchService? _steamWatch;
+        private bool _steamWatchMode;
 
         public MainWindow()
         {
@@ -44,11 +46,23 @@ namespace OpenSteamKitten
                 () => _processService.StartSteam(),
                 () => Application.Current.Shutdown()
             );
+            // 托盘菜单：随 Steam 启动（与浮窗菜单共用注册表为同一真相源）
+            _trayIcon.AddCheckableItem(
+                "随 Steam 启动 🚀",
+                getCurrent: () => SteamLaunchService.IsEnabled(),
+                onToggle: enabled => { if (enabled) SteamLaunchService.Enable(); else SteamLaunchService.Disable(); }
+            );
+            // 托盘菜单：显示/隐藏悬浮窗（动态文案，置顶以便隐藏后快速恢复）
+            _trayIcon.AddDynamicItem(
+                getText: () => IsVisible ? "隐藏悬浮窗 👁" : "显示悬浮窗 👁",
+                onClick: ToggleFloatingWindow
+            );
         }
 
         private void Window_Closing(object sender, CancelEventArgs e)
         {
             _updateCts.Cancel();
+            _steamWatch?.Dispose();
             _trayIcon?.Dispose();
         }
 
@@ -57,8 +71,9 @@ namespace OpenSteamKitten
             // 确保窗口在屏幕可见区域内
             EnsureWindowVisible();
 
-            // 启动时静默检查更新（fire-and-forget，永不抛出）
-            _ = SilentUpdateCheckAsync(isManual: false);
+            // 启动时静默检查更新（随 Steam 启动的静默模式不打扰；正常启动才检查）
+            if (!_steamWatchMode)
+                _ = SilentUpdateCheckAsync(isManual: false);
         }
 
         private void EnsureWindowVisible()
@@ -392,6 +407,74 @@ namespace OpenSteamKitten
                 "关于 OpenSteam Kitten",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
+        }
+
+        // 右键菜单：随 Steam 启动（勾选立即在当前实例开始监听，取消立即停止）
+        private void SteamLaunch_Click(object sender, RoutedEventArgs e)
+        {
+            if (SteamLaunchMenuItem.IsChecked)
+            {
+                SteamLaunchService.Enable();
+                StartSteamWatch();
+            }
+            else
+            {
+                SteamLaunchService.Disable();
+                StopSteamWatch();
+            }
+        }
+
+        // 右键菜单打开时：从注册表同步勾选状态（可能被托盘菜单或任务管理器改过）
+        private void ContextMenu_Opened(object sender, RoutedEventArgs e)
+        {
+            SteamLaunchMenuItem.IsChecked = SteamLaunchService.IsEnabled();
+        }
+
+        // 启动 Steam 监听（幂等：已在监听则跳过）。
+        // silent=true 表示静默自启模式（不显示窗口、跳过启动更新检查）；false=正常显示后监听。
+        public void StartSteamWatch(bool silent = false)
+        {
+            if (_steamWatch != null) return;
+            _steamWatchMode = silent;
+            _steamWatch = new SteamLaunchService(OnSteamStarted);
+            _steamWatch.Start();
+        }
+
+        // 停止 Steam 监听
+        private void StopSteamWatch()
+        {
+            _steamWatch?.Dispose();
+            _steamWatch = null;
+        }
+
+        // 检测到 Steam 客户端启动 → 显示并激活浮窗
+        private void OnSteamStarted()
+        {
+            if (!IsVisible)
+            {
+                Show();
+                Activate();
+                Topmost = true;
+            }
+        }
+
+        // 右键菜单：隐藏悬浮窗（程序不退出，托盘常驻）
+        private void HideFloatingWindow_Click(object sender, RoutedEventArgs e)
+        {
+            Hide();
+        }
+
+        // 托盘菜单：切换悬浮窗显示/隐藏
+        private void ToggleFloatingWindow()
+        {
+            if (IsVisible)
+                Hide();
+            else
+            {
+                Show();
+                Activate();
+                Topmost = true;
+            }
         }
 
         // 右键菜单：退出

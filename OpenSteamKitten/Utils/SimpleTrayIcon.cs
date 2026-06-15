@@ -65,6 +65,42 @@ namespace OpenSteamKitten.Utils
             }
         }
 
+        /// <summary>
+        /// 追加一个可勾选的菜单项（插在"退出"前面）。状态由外部回调决定，
+        /// 封装在此处避免调用方（MainWindow）引入 WinForms 依赖。
+        /// </summary>
+        public void AddCheckableItem(string text, Func<bool> getCurrent, Action<bool> onToggle)
+        {
+            var menu = _notifyIcon?.ContextMenuStrip;
+            if (menu == null) return;
+
+            var item = new ToolStripMenuItem(text);
+            // 菜单打开时从真相源同步勾选状态
+            menu.Opening += (s, e) => item.Checked = getCurrent();
+            // 点击翻转状态并通知调用方
+            item.Click += (s, e) =>
+            {
+                item.Checked = !item.Checked;
+                onToggle(item.Checked);
+            };
+            // 插在"退出"前面 → [勾选项, 退出]
+            menu.Items.Insert(0, item);
+        }
+
+        /// <summary>
+        /// 追加一个动态文案菜单项（文案在每次打开时刷新，点击触发回调）。插在"退出"前面。
+        /// </summary>
+        public void AddDynamicItem(Func<string> getText, Action onClick)
+        {
+            var menu = _notifyIcon?.ContextMenuStrip;
+            if (menu == null) return;
+
+            var item = new ToolStripMenuItem();
+            menu.Opening += (s, e) => item.Text = getText();
+            item.Click += (s, e) => onClick();
+            menu.Items.Insert(0, item);
+        }
+
         public void Dispose()
         {
             if (_notifyIcon != null)
