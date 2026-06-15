@@ -94,17 +94,26 @@ dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=
 ```
 OpenSteam-Kitten/
 ├── OpenSteamKitten/
-│   ├── Services/           # 业务逻辑服务
+│   ├── App.xaml(.cs)        # 应用入口
+│   ├── MainWindow.xaml(.cs) # 主窗口（悬浮窗 + 托盘菜单）
+│   ├── Services/            # 业务逻辑服务
 │   │   ├── SteamPathService.cs
 │   │   ├── InstallService.cs
 │   │   ├── LuaFileService.cs
-│   │   └── ProcessService.cs
-│   ├── Resources/
-│   │   └── dlls/          # OpenSteamTool DLL 文件
-│   ├── App.xaml           # 应用入口
-│   └── MainWindow.xaml    # 主窗口
-└── README.md
+│   │   ├── ProcessService.cs
+│   │   ├── UpdateService.cs
+│   │   └── AutoStartService.cs
+│   ├── Utils/
+│   │   └── SimpleTrayIcon.cs
+│   ├── Resources/dlls/      # 内核 DLL（OpenSteamTool + dwmapi + xinput1_4 + VERSION.txt）
+│   └── version.json         # 版本清单（壳/内核）
+├── VERSION                  # 壳版本号
+├── build-release.ps1        # 本地发版脚本（产物输出到 dist/）
+├── .github/workflows/       # CI（自动同步内核 + 发版）
+└── dist/                    # 发布产物（git 忽略，运行时生成）
 ```
+
+> 💡 **产物规范**：所有编译/发布产物统一进 `dist/`（`dotnet publish` 输出 + zip），仓库根目录始终保持干净。详见 `CLAUDE.md` 的 Directory & Artifact Layout。
 
 ## 安全说明
 

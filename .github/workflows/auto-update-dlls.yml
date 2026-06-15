@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
 
     steps:
       - name: Checkout repository
@@ -120,18 +121,19 @@ jobs:
             -r win-x64 \
             --self-contained false \
             /p:PublishSingleFile=true \
-            -o publish
+            -o dist/publish
 
       - name: Create ZIP package
         if: steps.check.outputs.need_update == 'true'
         run: |
           set -euo pipefail
-          # 打包前用最新版本覆盖 publish/version.json（构建时拷贝的是旧源文件）
-          printf '{"shell":"%s","core":"%s"}\n' "${{ steps.check.outputs.new_version }}" "${{ steps.upstream.outputs.tag }}" > publish/version.json
-          cd publish
+          mkdir -p dist
+          # 打包前用最新版本覆盖 dist/publish/version.json（构建时拷贝的是旧源文件）
+          printf '{"shell":"%s","core":"%s"}\n' "${{ steps.check.outputs.new_version }}" "${{ steps.upstream.outputs.tag }}" > dist/publish/version.json
+          cd dist/publish
           zip -r "../OpenSteamKitten-${{ steps.check.outputs.new_version }}-Release.zip" OpenSteamKitten.exe VERSION version.json Resources/
-          cd ..
-          ls -lh "OpenSteamKitten-${{ steps.check.outputs.new_version }}-Release.zip"
+          cd ../..
+          ls -lh "dist/OpenSteamKitten-${{ steps.check.outputs.new_version }}-Release.zip"
 
       - name: Commit DLL updates
         if: steps.check.outputs.need_update == 'true'
@@ -185,9 +187,18 @@ jobs:
             >
             > 上游更新日志：https://github.com/OpenSteam001/OpenSteamTool/releases/tag/v${{ steps.upstream.outputs.tag }}
           files: |
-            OpenSteamKitten-${{ steps.check.outputs.new_version }}-Release.zip
-            publish/version.json
+            dist/OpenSteamKitten-${{ steps.check.outputs.new_version }}-Release.zip
+            dist/publish/version.json
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 删除本次空跑记录（仅定时触发）
+        # 定时触发且无更新 → 删除自己的 run 记录，避免 Actions 页堆积空跑
+        # 有更新的 run 不进入此分支，自然保留为发版历史；手动触发也保留以便人工查看
+        if: steps.check.outputs.need_update != 'true' && github.event_name == 'schedule'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh run delete ${{ github.run_id }} --repo ${{ github.repository }}

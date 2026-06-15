@@ -45,7 +45,7 @@ $VersionFile     = Join-Path $Root "VERSION"
 $CoreVersionFile = Join-Path $Root "OpenSteamKitten\Resources\dlls\VERSION.txt"
 $SrcVersionJson  = Join-Path $Root "OpenSteamKitten\version.json"
 $Csproj          = Join-Path $Root "OpenSteamKitten\OpenSteamKitten.csproj"
-$PublishDir      = Join-Path $Root "publish"
+$PublishDir      = Join-Path $Root "dist\publish"
 
 if (-not $CoreVersion) {
     $CoreVersion = (Get-Content $CoreVersionFile -Raw).Trim()
@@ -71,7 +71,7 @@ Set-Content -Path (Join-Path $PublishDir "version.json") -Value $manifest -NoNew
 
 # 4) 打包 zip（布局与 Action 完全一致）
 $ZipName = "OpenSteamKitten-$Version-Release.zip"
-$ZipPath = Join-Path $Root $ZipName
+$ZipPath = Join-Path $Root "dist\$ZipName"
 if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
 Push-Location $PublishDir
 try {

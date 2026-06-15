@@ -85,3 +85,7 @@ CLAUDE.md
 # Build outputs (只在 Release 中发布，不提交到 Git)
 *.exe
 !OpenSteamKitten/bin/**/*.exe
+
+# 发布产物（统一输出目录 dist/，绝不散落根目录）
+dist/
+/OpenSteamKitten-*.zip
