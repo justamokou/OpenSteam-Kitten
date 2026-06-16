@@ -28,7 +28,9 @@ namespace OpenSteamKitten
         private readonly CancellationTokenSource _updateCts = new CancellationTokenSource();
         private SimpleTrayIcon? _trayIcon;
         private SteamLaunchService? _steamWatch;
+        private GameVisibilityService? _gameVisibility;
         private bool _steamWatchMode;
+        private bool _autoHiddenForGame;
 
         public MainWindow()
         {
@@ -54,6 +56,12 @@ namespace OpenSteamKitten
                 getCurrent: () => SteamLaunchService.IsEnabled(),
                 onToggle: enabled => { if (enabled) SteamLaunchService.Enable(); else SteamLaunchService.Disable(); }
             );
+            // 托盘菜单：前台进程加载 Steam Overlay 时隐藏悬浮窗
+            _trayIcon.AddCheckableItem(
+                "Steam 游戏时隐藏悬浮窗 🎮",
+                getCurrent: () => GameVisibilityService.IsEnabled(),
+                onToggle: ToggleHideInGame
+            );
             // 托盘菜单：显示/隐藏悬浮窗（动态文案，置顶以便隐藏后快速恢复）
             _trayIcon.AddDynamicItem(
                 getText: () => IsVisible ? "隐藏悬浮窗 👁" : "显示悬浮窗 👁",
@@ -65,6 +73,7 @@ namespace OpenSteamKitten
         {
             _updateCts.Cancel();
             _steamWatch?.Dispose();
+            _gameVisibility?.Dispose();
             _trayIcon?.Dispose();
         }
 
@@ -76,6 +85,9 @@ namespace OpenSteamKitten
             // 启动时静默检查更新（随 Steam 启动的静默模式不打扰；正常启动才检查）
             if (!_steamWatchMode)
                 _ = SilentUpdateCheckAsync(isManual: false);
+
+            if (GameVisibilityService.IsEnabled())
+                StartGameVisibility();
         }
 
         private void EnsureWindowVisible()
@@ -321,10 +333,14 @@ namespace OpenSteamKitten
             var sb = new System.Text.StringBuilder();
             sb.AppendLine("发现可用更新：\n");
             sb.AppendLine(info.ShellUpdateAvailable
-                ? $"• 小猫：v{info.CurrentShell} → v{info.LatestShell}"
+                ? (info.ShellContentChanged
+                    ? $"• 小猫：v{info.CurrentShell}（同版本文件更新）"
+                    : $"• 小猫：v{info.CurrentShell} → v{info.LatestShell}")
                 : $"• 小猫：v{info.CurrentShell}（已是最新）");
             sb.AppendLine(info.CoreUpdateAvailable
-                ? $"• 内核：{info.CurrentCore} → {info.LatestCore}"
+                ? (info.CoreContentChanged
+                    ? $"• 内核：{info.CurrentCore}（同版本文件更新）"
+                    : $"• 内核：{info.CurrentCore} → {info.LatestCore}")
                 : $"• 内核：{info.CurrentCore}（已是最新）");
             sb.AppendLine("\n是否立即更新？");
 
@@ -451,6 +467,27 @@ namespace OpenSteamKitten
         private void ContextMenu_Opened(object sender, RoutedEventArgs e)
         {
             SteamLaunchMenuItem.IsChecked = SteamLaunchService.IsEnabled();
+            HideInGameMenuItem.IsChecked = GameVisibilityService.IsEnabled();
+        }
+
+        // 右键菜单：前台进程加载 Steam Overlay 时隐藏悬浮窗
+        private void HideInGame_Click(object sender, RoutedEventArgs e)
+        {
+            ToggleHideInGame(HideInGameMenuItem.IsChecked);
+        }
+
+        private void ToggleHideInGame(bool enabled)
+        {
+            GameVisibilityService.SetEnabled(enabled);
+            if (enabled)
+            {
+                StartGameVisibility();
+            }
+            else
+            {
+                StopGameVisibility();
+                RestoreIfAutoHiddenForGame();
+            }
         }
 
         // 启动 Steam 监听（幂等：已在监听则跳过）。
@@ -470,6 +507,19 @@ namespace OpenSteamKitten
             _steamWatch = null;
         }
 
+        private void StartGameVisibility()
+        {
+            if (_gameVisibility != null) return;
+            _gameVisibility = new GameVisibilityService(OnSteamOverlayStateChanged);
+            _gameVisibility.Start();
+        }
+
+        private void StopGameVisibility()
+        {
+            _gameVisibility?.Dispose();
+            _gameVisibility = null;
+        }
+
         // 检测到 Steam 客户端启动 → 显示并激活浮窗
         private void OnSteamStarted()
         {
@@ -481,9 +531,35 @@ namespace OpenSteamKitten
             }
         }
 
+        private void OnSteamOverlayStateChanged(bool isSteamOverlayActive)
+        {
+            if (isSteamOverlayActive)
+            {
+                if (IsVisible)
+                {
+                    _autoHiddenForGame = true;
+                    Hide();
+                }
+                return;
+            }
+
+            RestoreIfAutoHiddenForGame();
+        }
+
+        private void RestoreIfAutoHiddenForGame()
+        {
+            if (!_autoHiddenForGame) return;
+
+            _autoHiddenForGame = false;
+            Show();
+            Activate();
+            Topmost = true;
+        }
+
         // 右键菜单：隐藏悬浮窗（程序不退出，托盘常驻）
         private void HideFloatingWindow_Click(object sender, RoutedEventArgs e)
         {
+            _autoHiddenForGame = false;
             Hide();
         }
 
@@ -491,9 +567,13 @@ namespace OpenSteamKitten
         private void ToggleFloatingWindow()
         {
             if (IsVisible)
+            {
+                _autoHiddenForGame = false;
                 Hide();
+            }
             else
             {
+                _autoHiddenForGame = false;
                 Show();
                 Activate();
                 Topmost = true;

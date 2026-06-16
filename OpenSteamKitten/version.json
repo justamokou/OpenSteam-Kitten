@@ -1,1 +1,28 @@
-{"shell":"1.4.0","core":"1.4.8"}
+{
+  "schema": 1,
+  "shell": "1.4.1",
+  "core": "1.4.8",
+  "package": null,
+  "files": {
+    "VERSION": {
+      "sha256": "f0b672321a89484f4da859ffc741bbfe8b5b693d387f7e05f84c5de625a1cc61",
+      "size": 5
+    },
+    "Resources/dlls/OpenSteamTool.dll": {
+      "sha256": "b2ed24e0b4e2d0dae4caa8817ed4c0c34af8fdf056f356fd697ae1356ea22581",
+      "size": 1446400
+    },
+    "Resources/dlls/dwmapi.dll": {
+      "sha256": "cc086189e9ae5f6fec1b9839110fd5ec5836e86989cb5f15cab80bb813df44f8",
+      "size": 109568
+    },
+    "Resources/dlls/xinput1_4.dll": {
+      "sha256": "730d6e3c1216228392cf336127ad663564cafdb560faf3ae8bdfcc8ca6f38a27",
+      "size": 122880
+    },
+    "Resources/dlls/VERSION.txt": {
+      "sha256": "7b727a6b54e2bba1f0956baf8b7915ebcd52cb93958f80dd7d5a17d6dd008af5",
+      "size": 5
+    }
+  }
+}

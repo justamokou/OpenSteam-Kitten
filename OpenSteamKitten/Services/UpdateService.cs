@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -22,9 +23,13 @@ namespace OpenSteamKitten.Services
         public string CurrentCore { get; set; } = "";
         public string LatestCore { get; set; } = "";
         public string? ZipDownloadUrl { get; set; }
+        public string? PackageSha256 { get; set; }
+        public string? RemoteManifestJson { get; set; }
         public string ReleaseHtmlUrl { get; set; } = "";
         public string ReleaseName { get; set; } = "";
         public string ReleaseNotes { get; set; } = "";
+        public bool ShellContentChanged { get; set; }
+        public bool CoreContentChanged { get; set; }
         /// <summary>非 null 表示检查本身失败（网络/解析），调用方自行决定是否提示。</summary>
         public string? ErrorMessage { get; set; }
 
@@ -60,6 +65,32 @@ namespace OpenSteamKitten.Services
 
         // 与 InstallService 保持一致的 3 个核心 DLL
         private static readonly string[] CoreDllNames = { "OpenSteamTool.dll", "dwmapi.dll", "xinput1_4.dll" };
+        private sealed class UpdateManifest
+        {
+            public int Schema { get; set; }
+            public string Shell { get; set; } = "";
+            public string Core { get; set; } = "";
+            public PackageDigest? Package { get; set; }
+            public Dictionary<string, FileDigest> Files { get; set; } = new Dictionary<string, FileDigest>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        private sealed class PackageDigest
+        {
+            public string Name { get; set; } = "";
+            public string Sha256 { get; set; } = "";
+            public long Size { get; set; }
+        }
+
+        private sealed class FileDigest
+        {
+            public string Sha256 { get; set; } = "";
+            public long Size { get; set; }
+        }
+
+        private static readonly JsonSerializerOptions ManifestJsonOptions = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        };
 
         private static readonly HttpClient _httpClient = new HttpClient
         {
@@ -157,9 +188,21 @@ namespace OpenSteamKitten.Services
                         break;
                     }
                 }
-                result.LatestCore = (versionJsonUrl != null ? await TryFetchCoreFromUrl(versionJsonUrl) : null)
-                                    ?? ParseCoreFromReleaseName(title)
-                                    ?? result.CurrentCore;
+                var remoteManifest = versionJsonUrl != null ? await TryFetchManifestFromUrl(versionJsonUrl) : null;
+                if (remoteManifest != null)
+                {
+                    result.RemoteManifestJson = remoteManifest.Value.RawJson;
+                    result.PackageSha256 = remoteManifest.Value.Manifest.Package?.Sha256;
+                }
+
+                string? manifestShell = remoteManifest?.Manifest.Shell;
+                string? manifestCore = remoteManifest?.Manifest.Core;
+                result.LatestShell = !string.IsNullOrWhiteSpace(manifestShell)
+                                    ? manifestShell.TrimStart('v')
+                                    : result.LatestShell;
+                result.LatestCore = !string.IsNullOrWhiteSpace(manifestCore)
+                                    ? manifestCore.TrimStart('v')
+                                    : ParseCoreFromReleaseName(title) ?? result.CurrentCore;
 
                 // 4) zip 下载地址：从资产列表里挑真实的（优先 -Release.zip），都没有则回退构造命名
                 result.ZipDownloadUrl = PickZipUrl(assets)
@@ -167,6 +210,24 @@ namespace OpenSteamKitten.Services
 
                 result.ShellUpdateAvailable = IsNewerVersion(result.CurrentShell, result.LatestShell);
                 result.CoreUpdateAvailable = IsNewerVersion(result.CurrentCore, result.LatestCore);
+
+                if (remoteManifest != null)
+                {
+                    var manifest = remoteManifest.Value.Manifest;
+                    if (!result.ShellUpdateAvailable && IsSameVersion(result.CurrentShell, result.LatestShell) &&
+                        HasManifestMismatch(manifest, IsShellFile))
+                    {
+                        result.ShellContentChanged = true;
+                        result.ShellUpdateAvailable = true;
+                    }
+
+                    if (!result.CoreUpdateAvailable && IsSameVersion(result.CurrentCore, result.LatestCore) &&
+                        HasManifestMismatch(manifest, IsCoreFile))
+                    {
+                        result.CoreContentChanged = true;
+                        result.CoreUpdateAvailable = true;
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -190,6 +251,7 @@ namespace OpenSteamKitten.Services
             {
                 var doc = XDocument.Parse(feedXml);
                 var atom = (XNamespace)"http://www.w3.org/2005/Atom";
+                if (doc.Root == null) return false;
 
                 foreach (var entry in doc.Root.Elements(atom + "entry"))
                 {
@@ -265,20 +327,119 @@ namespace OpenSteamKitten.Services
                 ?? pick(kv => kv.Key.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
         }
 
-        /// <summary>从 version.json URL 读内核版本（CDN，不受 API 限流）。失败返回 null。</summary>
-        private async Task<string?> TryFetchCoreFromUrl(string versionJsonUrl)
+        /// <summary>从 version.json URL 读权威更新清单（CDN，不受 API 限流）。失败返回 null。</summary>
+        private async Task<(UpdateManifest Manifest, string RawJson)?> TryFetchManifestFromUrl(string versionJsonUrl)
         {
             try
             {
                 using var resp = await _httpClient.GetAsync(versionJsonUrl);
                 if (!resp.IsSuccessStatusCode) return null;
                 string body = await resp.Content.ReadAsStringAsync();
-                using var doc = JsonDocument.Parse(body);
-                if (doc.RootElement.TryGetProperty("core", out var coreEl))
-                    return (coreEl.GetString() ?? "").Trim().TrimStart('v');
+                var manifest = JsonSerializer.Deserialize<UpdateManifest>(body, ManifestJsonOptions);
+                if (manifest == null) return null;
+
+                manifest.Shell = (manifest.Shell ?? "").Trim().TrimStart('v');
+                manifest.Core = (manifest.Core ?? "").Trim().TrimStart('v');
+                manifest.Files = NormalizeManifestFiles(manifest.Files);
+
+                if (string.IsNullOrEmpty(manifest.Shell) && string.IsNullOrEmpty(manifest.Core))
+                    return null;
+
+                return (manifest, body);
             }
             catch { }
             return null;
+        }
+
+        private static Dictionary<string, FileDigest> NormalizeManifestFiles(Dictionary<string, FileDigest>? files)
+        {
+            var normalized = new Dictionary<string, FileDigest>(StringComparer.OrdinalIgnoreCase);
+            if (files == null) return normalized;
+
+            foreach (var kv in files)
+            {
+                string key = NormalizeRelativePath(kv.Key);
+                if (string.IsNullOrEmpty(key) || kv.Value == null) continue;
+                normalized[key] = kv.Value;
+            }
+            return normalized;
+        }
+
+        private static bool IsShellFile(string relativePath)
+            => NormalizeRelativePath(relativePath).Equals("OpenSteamKitten.exe", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsCoreFile(string relativePath)
+        {
+            string rel = NormalizeRelativePath(relativePath);
+            if (!rel.StartsWith("Resources/dlls/", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            string name = Path.GetFileName(rel);
+            if (name.Equals("VERSION.txt", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            foreach (string dll in CoreDllNames)
+            {
+                if (name.Equals(dll, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool IsSameVersion(string a, string b)
+        {
+            a = (a ?? "").Trim().TrimStart('v');
+            b = (b ?? "").Trim().TrimStart('v');
+            if (!IsParsableVersion(a) || !IsParsableVersion(b)) return false;
+
+            string[] aParts = a.Split('.');
+            string[] bParts = b.Split('.');
+            int max = Math.Max(aParts.Length, bParts.Length);
+            for (int i = 0; i < max; i++)
+            {
+                int ai = i < aParts.Length ? int.Parse(aParts[i]) : 0;
+                int bi = i < bParts.Length ? int.Parse(bParts[i]) : 0;
+                if (ai != bi) return false;
+            }
+            return true;
+        }
+
+        private static bool HasManifestMismatch(UpdateManifest manifest, Func<string, bool> includeFile)
+        {
+            foreach (var kv in manifest.Files)
+            {
+                string rel = NormalizeRelativePath(kv.Key);
+                if (!includeFile(rel)) continue;
+                if (!LocalFileMatches(rel, kv.Value))
+                    return true;
+            }
+            return false;
+        }
+
+        public bool LocalFilesMatchManifest(string? manifestJson)
+        {
+            var manifest = TryParseManifest(manifestJson);
+            if (manifest == null) return true;
+
+            return !HasManifestMismatch(manifest, rel => IsShellFile(rel) || IsCoreFile(rel));
+        }
+
+        private static UpdateManifest? TryParseManifest(string? manifestJson)
+        {
+            if (string.IsNullOrWhiteSpace(manifestJson)) return null;
+            try
+            {
+                var manifest = JsonSerializer.Deserialize<UpdateManifest>(manifestJson, ManifestJsonOptions);
+                if (manifest == null) return null;
+                manifest.Files = NormalizeManifestFiles(manifest.Files);
+                manifest.Shell = (manifest.Shell ?? "").Trim().TrimStart('v');
+                manifest.Core = (manifest.Core ?? "").Trim().TrimStart('v');
+                return manifest;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         /// <summary>从 release 标题里解析内核版本号，如 "v1.1.1 - 内核更新 (OpenSteamTool 1.4.9)" → "1.4.9"。</summary>
@@ -317,6 +478,48 @@ namespace OpenSteamKitten.Services
             }
         }
 
+        private static bool LocalFileMatches(string relativePath, FileDigest expected)
+        {
+            if (expected == null) return true;
+
+            string localPath = Path.Combine(AppDir, NormalizeRelativePath(relativePath).Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(localPath)) return false;
+
+            try
+            {
+                var info = new FileInfo(localPath);
+                if (expected.Size > 0 && info.Length != expected.Size)
+                    return false;
+
+                if (!string.IsNullOrWhiteSpace(expected.Sha256))
+                {
+                    string actual = ComputeSha256(localPath);
+                    return actual.Equals(expected.Sha256.Trim(), StringComparison.OrdinalIgnoreCase);
+                }
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string ComputeSha256(string path)
+        {
+            using var stream = File.OpenRead(path);
+            using var sha = SHA256.Create();
+            return Convert.ToHexString(sha.ComputeHash(stream));
+        }
+
+        private static string ComputeSha256(Stream stream)
+        {
+            using var sha = SHA256.Create();
+            return Convert.ToHexString(sha.ComputeHash(stream));
+        }
+
+        private static string NormalizeRelativePath(string relativePath)
+            => (relativePath ?? "").Trim().Replace('\\', '/').TrimStart('/');
+
         /// <summary>
         /// 下载并应用更新。仅内核 → 原地覆盖 DLL（免重启）；壳有更新 → 暂存新 exe + 生成替换 bat（需重启）。
         /// </summary>
@@ -325,6 +528,8 @@ namespace OpenSteamKitten.Services
         {
             if (info == null || string.IsNullOrEmpty(info.ZipDownloadUrl))
                 return Failed("没有可用的下载地址。");
+
+            var manifest = TryParseManifest(info.RemoteManifestJson);
 
             // 先写 pending marker，再开始应用（用于重启后校验是否成功）
             WritePendingMarker(info);
@@ -343,17 +548,21 @@ namespace OpenSteamKitten.Services
                         await resp.Content.CopyToAsync(fs, cancellationToken);
                     }
                 }
+
+                VerifyDownloadedPackage(tempZip, manifest, info.ShellUpdateAvailable);
                 progress?.Report(0.5);
 
                 if (!info.ShellUpdateAvailable)
                 {
                     // 2a) 仅内核更新：原地覆盖 DLL + VERSION.txt + version.json，免重启
                     await Task.Run(() => ApplyCoreOnlyFromZip(tempZip), cancellationToken);
+                    WriteRemoteManifest(info.RemoteManifestJson);
                     progress?.Report(1.0);
 
                     string nowCore = GetCoreVersion();
                     string target = (info.LatestCore ?? "").TrimStart('v');
-                    if (!string.IsNullOrEmpty(target) && nowCore.Trim() == target)
+                    if (!string.IsNullOrEmpty(target) && nowCore.Trim() == target &&
+                        LocalFilesMatchManifest(info.RemoteManifestJson))
                     {
                         DeletePendingMarker();
                         return new UpdateApplyResult
@@ -372,6 +581,7 @@ namespace OpenSteamKitten.Services
                         if (Directory.Exists(extractDir)) Directory.Delete(extractDir, true);
                         ZipFile.ExtractToDirectory(tempZip, extractDir, overwriteFiles: true);
                         CopyNonExeFiles(extractDir);
+                        WriteRemoteManifest(info.RemoteManifestJson);
                         StageNewExe(extractDir);
                     }, cancellationToken);
                     progress?.Report(1.0);
@@ -403,6 +613,50 @@ namespace OpenSteamKitten.Services
         }
 
         /// <summary>仅内核：从 zip 里挑出 3 个 DLL + VERSION.txt + version.json，原地覆盖。</summary>
+        private static void VerifyDownloadedPackage(string zipPath, UpdateManifest? manifest, bool shellUpdate)
+        {
+            if (manifest?.Package != null && !string.IsNullOrWhiteSpace(manifest.Package.Sha256))
+            {
+                string actualZipHash = ComputeSha256(zipPath);
+                if (!actualZipHash.Equals(manifest.Package.Sha256.Trim(), StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("下载包校验失败（SHA256 不匹配）。");
+            }
+
+            if (manifest == null || manifest.Files.Count == 0)
+                return;
+
+            using var archive = ZipFile.OpenRead(zipPath);
+            foreach (var kv in manifest.Files)
+            {
+                string rel = NormalizeRelativePath(kv.Key);
+                bool shouldVerify = shellUpdate ? (IsShellFile(rel) || IsCoreFile(rel)) : IsCoreFile(rel);
+                if (!shouldVerify) continue;
+
+                var entry = FindEntry(archive, rel);
+                if (entry == null)
+                    throw new InvalidDataException($"下载包缺少文件：{rel}");
+
+                if (kv.Value.Size > 0 && entry.Length != kv.Value.Size)
+                    throw new InvalidDataException($"下载包文件大小不匹配：{rel}");
+
+                if (!string.IsNullOrWhiteSpace(kv.Value.Sha256))
+                {
+                    using var stream = entry.Open();
+                    string actual = ComputeSha256(stream);
+                    if (!actual.Equals(kv.Value.Sha256.Trim(), StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidDataException($"下载包文件校验失败：{rel}");
+                }
+            }
+        }
+
+        private static void WriteRemoteManifest(string? manifestJson)
+        {
+            if (string.IsNullOrWhiteSpace(manifestJson)) return;
+
+            File.WriteAllText(ManifestPath, manifestJson, Encoding.UTF8);
+        }
+
+        /// <summary>仅内核：从 zip 里挑出 3 个 DLL + VERSION.txt + version.json，原地覆盖。</summary>
         private void ApplyCoreOnlyFromZip(string zipPath)
         {
             Directory.CreateDirectory(CoreDllDir);
@@ -426,9 +680,11 @@ namespace OpenSteamKitten.Services
 
         private static ZipArchiveEntry? FindEntry(ZipArchive archive, string fileName)
         {
+            string normalized = NormalizeRelativePath(fileName);
             foreach (var e in archive.Entries)
             {
-                if (string.Equals(e.Name, fileName, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(NormalizeRelativePath(e.FullName), normalized, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(e.Name, fileName, StringComparison.OrdinalIgnoreCase))
                     return e;
             }
             return null;
@@ -533,6 +789,7 @@ namespace OpenSteamKitten.Services
                     targetShell = info.LatestShell ?? "",
                     targetCore = (info.LatestCore ?? "").TrimStart('v'),
                     kind,
+                    manifestJson = info.RemoteManifestJson ?? "",
                     timestamp = DateTimeOffset.UtcNow.ToString("o")
                 };
                 File.WriteAllText(PendingMarkerPath, JsonSerializer.Serialize(obj));
@@ -546,8 +803,8 @@ namespace OpenSteamKitten.Services
             catch { }
         }
 
-        /// <summary>读取 pending marker 的目标版本；不存在或解析失败返回 null。</summary>
-        public (string TargetShell, string TargetCore)? ReadPendingMarker()
+        /// <summary>读取 pending marker 的目标版本/清单；不存在或解析失败返回 null。</summary>
+        public (string TargetShell, string TargetCore, string? ManifestJson)? ReadPendingMarker()
         {
             try
             {
@@ -556,7 +813,8 @@ namespace OpenSteamKitten.Services
                 var root = doc.RootElement;
                 string ts = root.TryGetProperty("targetShell", out var tsEl) ? (tsEl.GetString() ?? "") : "";
                 string tc = root.TryGetProperty("targetCore", out var tcEl) ? (tcEl.GetString() ?? "") : "";
-                return (ts, tc);
+                string? manifestJson = root.TryGetProperty("manifestJson", out var manifestEl) ? manifestEl.GetString() : null;
+                return (ts, tc, manifestJson);
             }
             catch { return null; }
         }

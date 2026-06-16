@@ -42,6 +42,7 @@
                 <MenuItem Header="重启 Steam ♻️" Click="RestartSteam_Click"/>
                 <Separator/>
                 <MenuItem x:Name="SteamLaunchMenuItem" Header="随 Steam 启动 🚀" IsCheckable="True" Click="SteamLaunch_Click"/>
+                <MenuItem x:Name="HideInGameMenuItem" Header="Steam 游戏时隐藏悬浮窗 🎮" IsCheckable="True" Click="HideInGame_Click"/>
                 <MenuItem Header="隐藏悬浮窗 👁" Click="HideFloatingWindow_Click"/>
                 <MenuItem Header="检查更新 🔄" Click="CheckUpdate_Click"/>
                 <MenuItem Header="关于" Click="About_Click"/>

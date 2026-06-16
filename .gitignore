@@ -81,6 +81,7 @@ appsettings.*.json
 # Claude Code
 .claude/
 CLAUDE.md
+AGENTS.md
 
 # Build outputs (只在 Release 中发布，不提交到 Git)
 *.exe

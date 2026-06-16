@@ -80,17 +80,18 @@ namespace OpenSteamKitten
                 var marker = svc.ReadPendingMarker();
                 if (marker == null) return;
 
-                var (targetShell, targetCore) = marker.Value;
+                var (targetShell, targetCore, manifestJson) = marker.Value;
                 string currentShell = svc.GetCurrentVersion();
                 string currentCore = svc.GetCoreVersion();
 
                 // 当前版本已达目标 → 成功；否则视为未完成
                 bool shellOk = !svc.IsNewerVersion(currentShell, targetShell);
                 bool coreOk = string.IsNullOrEmpty(targetCore) || !svc.IsNewerVersion(currentCore, targetCore);
+                bool filesOk = svc.LocalFilesMatchManifest(manifestJson);
 
                 svc.DeletePendingMarker(); // 无论成败都清掉，避免重复提示
 
-                if (!(shellOk && coreOk))
+                if (!(shellOk && coreOk && filesOk))
                 {
                     MessageBox.Show(
                         "上次更新未完成，可能是替换文件失败。\n\n" +
