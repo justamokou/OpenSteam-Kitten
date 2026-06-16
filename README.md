@@ -1,146 +1,106 @@
-# OpenSteam Kitten 🐱
+# OpenSteam Kitten
 
-一个轻量级 GUI 壳程序，用于简化 [OpenSteamTool](https://github.com/OpenSteam001/OpenSteamTool) 的使用。
+OpenSteam Kitten 是 [OpenSteamTool](https://github.com/OpenSteam001/OpenSteamTool) 的轻量 WPF 壳。它提供一个小型悬浮窗和托盘菜单，用来安装 OpenSteamTool DLL、管理 Lua/manifest 文件，并处理小猫和内核更新。
 
-## ⚡ 快速开始（3 步搞定）
+## 下载与运行
 
-### 第 1 步：下载并运行
+从 [Releases](https://github.com/justamokou/OpenSteam-Kitten/releases) 下载最新的 `OpenSteamKitten-*-Release.zip`，解压到任意位置后运行 `OpenSteamKitten.exe`。
 
-**📥 下载**：
+请保持这些文件在同一目录下：
 
-从 [Releases](https://github.com/justamokou/OpenSteam-Kitten/releases) 下载 `OpenSteamKitten-v1.0.0.zip`（约 **866 KB**），解压到任意位置。
+```text
+OpenSteamKitten.exe
+VERSION
+version.json
+Resources/
+```
 
-> 💡 **首次运行**：如提示需要 .NET 6 Desktop Runtime，Windows 会自动引导安装（约 55 MB，一次安装永久使用）。
-> 
-> ⚠️ **重要**：必须保持 `OpenSteamKitten.exe` 和 `Resources` 文件夹在同一目录下。
+当前发布包是精简版，需要 .NET 6 Desktop Runtime。首次运行如缺少运行时，Windows 通常会引导安装。
 
-**运行**：双击 exe 文件，会在桌面右下角出现一个黑色圆形悬浮窗，中间有白色猫猫图标 🐱
-
-### 第 2 步：一键安装 DLL
-
-1. **右键点击**悬浮窗
-2. 选择 **"一键安装 DLL 📦"**
-3. 等待安装完成
-4. **重启 Steam** 使更改生效
-
-> ⚠️ **重要**：必须重启 Steam 才能加载 OpenSteamTool！
-
-### 第 3 步：添加 Lua 配置
-
-将你的 `.lua` 配置文件或 `.manifest` 清单文件**直接拖到悬浮窗**上即可！
-
-程序会自动：
-- ✅ `.lua` 文件 → `<Steam根目录>\config\lua\`
-- ✅ `.manifest` 文件 → `<Steam根目录>\config\depotcache\`
-- ✅ 支持同时拖拽多个文件，自动分类
-- ✅ 显示操作结果
-
-> 🔧 **删除配置**：按住 `Ctrl` 键，再将文件拖到悬浮窗上
-
----
-
-## 🎮 使用技巧
+## 常用操作
 
 | 操作 | 功能 |
-|------|------|
-| **双击悬浮窗** | 启动 Steam |
-| **拖入 .lua 文件** | 添加到 config/lua/ |
-| **拖入 .manifest 文件** | 添加到 config/depotcache/ |
-| **Ctrl + 拖入文件** | 删除对应配置 |
-| **右键菜单** | 查看更多功能 |
-| **拖动悬浮窗** | 移动到你喜欢的位置 |
+|---|---|
+| 双击悬浮窗 | 启动 Steam |
+| 右键悬浮窗 | 打开功能菜单 |
+| 拖入 `.lua` | 复制到 `Steam/config/lua/` |
+| 拖入 `.manifest` | 复制到 `Steam/config/depotcache/` |
+| Ctrl + 拖入文件 | 删除 Steam 配置目录里的对应文件 |
+| 拖动悬浮窗 | 移动位置 |
 
-### 右键菜单功能
+## 主要功能
 
-- 📦 **一键安装 DLL**：安装 OpenSteamTool 到 Steam 目录
-- 📁 **打开 Lua 目录**：快速访问配置文件夹
-- 🎮 **打开 Steam**：启动 Steam 客户端
-- ℹ️ **关于**：查看版本信息和使用说明
-- ❌ **退出**：关闭程序
+- 一键安装 `OpenSteamTool.dll`、`dwmapi.dll`、`xinput1_4.dll` 到 Steam 根目录。
+- 一键清理已安装 DLL、Lua 配置、manifest 文件。
+- 托盘常驻，可隐藏/显示悬浮窗。
+- 可设置随 Steam 启动。
+- 可开启“Steam 游戏时隐藏悬浮窗”：当前前台进程加载 Steam Overlay 时隐藏小猫，切出游戏后恢复。
+- 内置更新检查，发布包会通过 `version.json` 里的 SHA256/size 校验关键文件。
+
+安装 DLL 后需要重启 Steam 才会生效。
 
 ## 系统要求
 
 - Windows 10/11
-- .NET 6.0 Desktop Runtime（如果使用 Lite 版本）
+- .NET 6 Desktop Runtime
 - 已安装 Steam
 
 ## 开发
 
-### 技术栈
+```powershell
+dotnet build
+dotnet run --project OpenSteamKitten
+```
 
-- C# WPF
-- .NET 6.0
-- 纯 WPF + Windows Forms，无外部 NuGet 依赖
-
-### 构建
+本地发布精简版：
 
 ```powershell
-# 克隆仓库
-git clone https://github.com/justamokou/OpenSteam-Kitten.git
-cd OpenSteam-Kitten
-
-# 构建
-dotnet build
-
-# 运行
-dotnet run --project OpenSteamKitten
-
-# 发布（单文件可执行程序）
-dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
+.\build-release.ps1 -Version 1.4.1
 ```
 
-### 项目结构
+产物输出到 `dist/`，不要把 exe、zip、publish 输出放到仓库根目录。
 
-```
+## 项目结构
+
+```text
 OpenSteam-Kitten/
-├── OpenSteamKitten/
-│   ├── App.xaml(.cs)        # 应用入口
-│   ├── MainWindow.xaml(.cs) # 主窗口（悬浮窗 + 托盘菜单）
-│   ├── Services/            # 业务逻辑服务
-│   │   ├── SteamPathService.cs
-│   │   ├── InstallService.cs
-│   │   ├── LuaFileService.cs
-│   │   ├── ProcessService.cs
-│   │   ├── UpdateService.cs
-│   │   └── AutoStartService.cs
-│   ├── Utils/
-│   │   └── SimpleTrayIcon.cs
-│   ├── Resources/dlls/      # 内核 DLL（OpenSteamTool + dwmapi + xinput1_4 + VERSION.txt）
-│   └── version.json         # 版本清单（壳/内核）
-├── VERSION                  # 壳版本号
-├── build-release.ps1        # 本地发版脚本（产物输出到 dist/）
-├── .github/workflows/       # CI（自动同步内核 + 发版）
-└── dist/                    # 发布产物（git 忽略，运行时生成）
+  OpenSteamKitten/
+    App.xaml(.cs)
+    MainWindow.xaml(.cs)
+    Services/
+    Utils/
+    Resources/dlls/
+    version.json
+  VERSION
+  build-release.ps1
+  .github/workflows/
 ```
 
-> 💡 **产物规范**：所有编译/发布产物统一进 `dist/`（`dotnet publish` 输出 + zip），仓库根目录始终保持干净。详见 `CLAUDE.md` 的 Directory & Artifact Layout。
+核心版本文件：
 
-## 安全说明
-
-- ✅ 不收集任何用户数据
-- ✅ 仅访问本地注册表和文件系统
-- ✅ 不进行网络通信
-- ✅ DLL 文件直接嵌入程序，防止篡改
+- `VERSION`: OpenSteam Kitten 版本。
+- `OpenSteamKitten/Resources/dlls/VERSION.txt`: OpenSteamTool 内核版本。
+- `OpenSteamKitten/version.json`: 本地/发布更新清单。
 
 ## 常见问题
 
-**Q: 提示"未检测到 Steam 安装路径"？**  
-A: 确保 Steam 已正确安装，程序会从注册表读取 `HKEY_CURRENT_USER\Software\Valve\Steam\SteamPath`
+**未检测到 Steam 安装路径**  
+确认 Steam 已正确安装。程序会读取 `HKEY_CURRENT_USER\Software\Valve\Steam\SteamPath`。
 
-**Q: 安装后 Steam 无法启动？**  
-A: 请检查是否有杀毒软件拦截了 DLL 文件，或尝试以管理员权限运行 Steam
+**安装后没有生效**  
+重启 Steam；如仍失败，检查杀毒软件是否拦截 DLL。
 
-**Q: 如何卸载？**  
-A: 删除 Steam 根目录下的 `OpenSteamTool.dll`、`dwmapi.dll`、`xinput1_4.dll` 三个文件即可
+**如何卸载 DLL**  
+右键悬浮窗使用清理功能，或手动删除 Steam 根目录下的 `OpenSteamTool.dll`、`dwmapi.dll`、`xinput1_4.dll`。
+
+## 致谢
+
+- [OpenSteamTool](https://github.com/OpenSteam001/OpenSteamTool)
 
 ## 许可证
 
 MIT License
 
-## 致谢
-
-- [OpenSteamTool](https://github.com/OpenSteam001/OpenSteamTool) - 核心功能提供者
-
 ## 免责声明
 
-本项目仅供学习和研究使用，请遵守当地法律法规、平台服务条款和软件许可协议。
+本项目仅供学习和研究使用。请遵守当地法律法规、平台服务条款和软件许可协议。
